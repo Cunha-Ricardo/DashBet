@@ -1,6 +1,7 @@
 import type { Bet } from "./hooks/use-bets"
 import { jsPDF } from "jspdf"
-import "jspdf-autotable"
+// Importar o plugin autotable de forma explícita
+import autoTable from "jspdf-autotable"
 
 // Função para exportar apostas para CSV
 export function exportToCSV() {
@@ -111,9 +112,11 @@ export function exportToCSV() {
   document.body.removeChild(link)
 }
 
-// Função para exportar apostas para PDF
+// Função para exportar apostas para PDF - versão simplificada e mais robusta
 export function exportToPDF() {
   try {
+    console.log("Iniciando exportação para PDF...")
+
     // Obter apostas do localStorage
     const storedBets = localStorage.getItem("bets")
     if (!storedBets) {
@@ -122,6 +125,7 @@ export function exportToPDF() {
     }
 
     const bets: Bet[] = JSON.parse(storedBets)
+    console.log(`Dados carregados: ${bets.length} apostas encontradas`)
 
     // Criar novo documento PDF
     const doc = new jsPDF({
@@ -130,11 +134,20 @@ export function exportToPDF() {
       format: "a4",
     })
 
-    // Adicionar logo e título
-    doc.setFillColor(41, 128, 185) // Azul
+    console.log("Documento PDF criado")
+
+    // Verificar se o plugin autoTable está disponível
+    if (typeof doc.autoTable !== "function") {
+      // Adicionar o plugin manualmente se não estiver disponível
+      ;(doc as any).autoTable = autoTable
+      console.log("Plugin autoTable adicionado manualmente")
+    }
+
+    // Adicionar cabeçalho
+    doc.setFillColor(41, 128, 185)
     doc.rect(0, 0, doc.internal.pageSize.getWidth(), 30, "F")
 
-    doc.setTextColor(255, 255, 255) // Branco
+    doc.setTextColor(255, 255, 255)
     doc.setFontSize(22)
     doc.setFont("helvetica", "bold")
     doc.text("BetTrack", 14, 15)
@@ -143,31 +156,25 @@ export function exportToPDF() {
     doc.setFont("helvetica", "normal")
     doc.text("Relatório de Apostas", 14, 22)
 
+    console.log("Cabeçalho adicionado")
+
     // Adicionar data de geração
-    doc.setTextColor(100, 100, 100) // Cinza
+    doc.setTextColor(100, 100, 100)
     doc.setFontSize(10)
-    doc.text(
-      `Gerado em: ${new Date().toLocaleDateString()} às ${new Date().toLocaleTimeString()}`,
-      doc.internal.pageSize.getWidth() - 14,
-      38,
-      { align: "right" },
-    )
+    doc.text(`Gerado em: ${new Date().toLocaleDateString()}`, doc.internal.pageSize.getWidth() - 14, 38, {
+      align: "right",
+    })
 
-    // Adicionar resumo estatístico
-    doc.setTextColor(0, 0, 0) // Preto
-    doc.setFontSize(14)
-    doc.setFont("helvetica", "bold")
-    doc.text("Resumo Estatístico", 14, 45)
-
-    // Calcular estatísticas
+    // Calcular estatísticas básicas
     const totalBets = bets.length
-    const totalWagered = bets.reduce((acc, bet) => acc + bet.amount, 0)
     const totalWins = bets.filter((bet) => bet.result === "win").length
     const totalLosses = bets.filter((bet) => bet.result === "loss").length
-    const winRate = totalBets > 0 ? (totalWins / totalBets) * 100 : 0
 
+    let totalWagered = 0
     let totalProfit = 0
+
     bets.forEach((bet) => {
+      totalWagered += bet.amount
       if (bet.result === "win") {
         totalProfit += bet.amount * bet.odds - bet.amount
       } else {
@@ -175,9 +182,18 @@ export function exportToPDF() {
       }
     })
 
+    const winRate = totalBets > 0 ? (totalWins / totalBets) * 100 : 0
     const roi = totalWagered > 0 ? (totalProfit / totalWagered) * 100 : 0
 
-    // Tabela de estatísticas gerais
+    console.log("Estatísticas calculadas")
+
+    // Adicionar título da seção de estatísticas
+    doc.setTextColor(0, 0, 0)
+    doc.setFontSize(14)
+    doc.setFont("helvetica", "bold")
+    doc.text("Resumo Estatístico", 14, 45)
+
+    // Preparar dados para a tabela de estatísticas
     const statsData = [
       ["Total de Apostas", totalBets.toString()],
       ["Apostas Ganhas", totalWins.toString()],
@@ -188,231 +204,106 @@ export function exportToPDF() {
       ["ROI", `${roi.toFixed(2)}%`],
     ]
 
+    console.log("Dados da tabela de estatísticas preparados")
+
     // Adicionar tabela de estatísticas
-    ;(doc as any).autoTable({
-      startY: 50,
-      body: statsData,
-      theme: "grid",
-      styles: {
-        fontSize: 10,
-        cellPadding: 5,
-        lineColor: [200, 200, 200],
-        lineWidth: 0.1,
-      },
-      columnStyles: {
-        0: {
-          fontStyle: "bold",
-          fillColor: [240, 240, 240],
-          cellWidth: 80,
+    try {
+      ;(doc as any).autoTable({
+        startY: 50,
+        body: statsData,
+        theme: "grid",
+        styles: {
+          fontSize: 10,
+          cellPadding: 5,
         },
-        1: {
-          cellWidth: 60,
-          cellCreator: (data: any) => {
-            if (data.row.index === 4) {
-              // Lucro/Prejuízo Total
-              const value = Number.parseFloat(data.cell.raw.replace("R$ ", ""))
-              if (value >= 0) {
-                data.cell.styles.textColor = [46, 125, 50] // Verde para valores positivos
-              } else {
-                data.cell.styles.textColor = [198, 40, 40] // Vermelho para valores negativos
-              }
-            }
-            return data
-          },
+        columnStyles: {
+          0: { fontStyle: "bold", cellWidth: 80 },
+          1: { cellWidth: 60 },
         },
-      },
-      headStyles: {
-        fillColor: [41, 128, 185],
-        textColor: 255,
-        fontStyle: "bold",
-      },
-    })
-
-    // Adicionar gráfico de desempenho por tipo
-    const currentY = (doc as any).lastAutoTable.finalY + 15
-    doc.setFontSize(14)
-    doc.setFont("helvetica", "bold")
-    doc.text("Desempenho por Tipo de Aposta", 14, currentY)
-
-    // Agrupar apostas por tipo
-    const betsByType = bets.reduce(
-      (acc, bet) => {
-        if (!acc[bet.type]) {
-          acc[bet.type] = []
-        }
-        acc[bet.type].push(bet)
-        return acc
-      },
-      {} as Record<string, Bet[]>,
-    )
-
-    // Calcular estatísticas por tipo
-    const typeStatsData = []
-    for (const [type, typeBets] of Object.entries(betsByType)) {
-      const count = typeBets.length
-      const wins = typeBets.filter((bet) => bet.result === "win").length
-      const typeWinRate = (wins / count) * 100
-
-      let typeProfit = 0
-      for (const bet of typeBets) {
-        if (bet.result === "win") {
-          typeProfit += bet.amount * bet.odds - bet.amount
-        } else {
-          typeProfit -= bet.amount
-        }
-      }
-
-      typeStatsData.push([type, count.toString(), `${typeWinRate.toFixed(1)}%`, `R$ ${typeProfit.toFixed(2)}`])
+      })
+      console.log("Tabela de estatísticas adicionada com sucesso")
+    } catch (error) {
+      console.error("Erro ao adicionar tabela de estatísticas:", error)
+      throw new Error("Falha ao adicionar tabela de estatísticas")
     }
 
-    // Ordenar por lucro (decrescente)
-    typeStatsData.sort((a, b) => {
-      const profitA = Number.parseFloat(a[3].replace("R$ ", ""))
-      const profitB = Number.parseFloat(b[3].replace("R$ ", ""))
-      return profitB - profitA
-    })
-
-    // Adicionar tabela de desempenho por tipo
-    ;(doc as any).autoTable({
-      head: [["Tipo", "Apostas", "Taxa de Vitória", "Lucro/Prejuízo"]],
-      body: typeStatsData,
-      startY: currentY + 5,
-      theme: "grid",
-      styles: {
-        fontSize: 10,
-        cellPadding: 5,
-        lineColor: [200, 200, 200],
-        lineWidth: 0.1,
-      },
-      headStyles: {
-        fillColor: [41, 128, 185],
-        textColor: 255,
-        fontStyle: "bold",
-      },
-      columnStyles: {
-        3: {
-          halign: "right",
-          cellCreator: (data: any) => {
-            const value = Number.parseFloat(data.cell.raw.replace("R$ ", ""))
-            if (value >= 0) {
-              data.cell.styles.textColor = [46, 125, 50] // Verde para valores positivos
-            } else {
-              data.cell.styles.textColor = [198, 40, 40] // Vermelho para valores negativos
-            }
-            return data
-          },
-        },
-      },
-      alternateRowStyles: {
-        fillColor: [245, 245, 245],
-      },
-    })
-
-    // Adicionar tabela de apostas
-    const apostasY = (doc as any).lastAutoTable.finalY + 15
-    doc.setFontSize(14)
-    doc.setFont("helvetica", "bold")
-    doc.text("Histórico de Apostas", 14, apostasY)
-
-    // Preparar colunas para a tabela
+    // Preparar dados para a tabela de apostas
     const tableColumn = ["Data", "Tipo", "Valor (R$)", "Odd", "Resultado", "Lucro/Perda (R$)"]
-
-    // Preparar dados para a tabela
-    const tableRows = []
-
-    for (const bet of bets) {
+    const tableRows = bets.map((bet) => {
       const profit = bet.result === "win" ? bet.amount * bet.odds - bet.amount : -bet.amount
-
-      tableRows.push([
+      return [
         new Date(bet.date).toLocaleDateString(),
         bet.type,
         bet.amount.toFixed(2),
         bet.odds.toFixed(2),
         bet.result === "win" ? "Ganhou" : "Perdeu",
         profit.toFixed(2),
-      ])
-    }
-    // Adicionar tabela ao PDF
-    ;(doc as any).autoTable({
-      head: [tableColumn],
-      body: tableRows,
-      startY: apostasY + 5,
-      theme: "grid",
-      styles: {
-        fontSize: 9,
-        cellPadding: 3,
-        lineColor: [200, 200, 200],
-        lineWidth: 0.1,
-      },
-      headStyles: {
-        fillColor: [41, 128, 185],
-        textColor: 255,
-        fontStyle: "bold",
-      },
-      alternateRowStyles: {
-        fillColor: [245, 245, 245],
-      },
-      columnStyles: {
-        0: { cellWidth: 25 }, // Data
-        1: { cellWidth: 30 }, // Tipo
-        2: { cellWidth: 25 }, // Valor
-        3: { cellWidth: 20 }, // Odd
-        4: {
-          cellWidth: 25,
-          cellCreator: (data: any) => {
-            if (data.cell.raw === "Ganhou") {
-              data.cell.styles.textColor = [46, 125, 50] // Verde
-            } else {
-              data.cell.styles.textColor = [198, 40, 40] // Vermelho
-            }
-            return data
-          },
-        }, // Resultado
-        5: {
-          cellWidth: 30,
-          halign: "right",
-          cellCreator: (data: any) => {
-            const value = Number.parseFloat(data.cell.raw)
-            if (value >= 0) {
-              data.cell.styles.textColor = [46, 125, 50] // Verde para valores positivos
-            } else {
-              data.cell.styles.textColor = [198, 40, 40] // Vermelho para valores negativos
-            }
-            return data
-          },
-        }, // Lucro/Perda
-      },
+      ]
     })
 
+    console.log("Dados da tabela de apostas preparados")
+
+    // Adicionar título da seção de apostas
+    const currentY = (doc as any).lastAutoTable?.finalY + 15 || 120
+    doc.setFontSize(14)
+    doc.setFont("helvetica", "bold")
+    doc.text("Histórico de Apostas", 14, currentY)
+
+    // Adicionar tabela de apostas
+    try {
+      ;(doc as any).autoTable({
+        head: [tableColumn],
+        body: tableRows,
+        startY: currentY + 5,
+        theme: "grid",
+        styles: {
+          fontSize: 9,
+          cellPadding: 3,
+        },
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245],
+        },
+      })
+      console.log("Tabela de apostas adicionada com sucesso")
+    } catch (error) {
+      console.error("Erro ao adicionar tabela de apostas:", error)
+      throw new Error("Falha ao adicionar tabela de apostas")
+    }
+
     // Adicionar rodapé
-    const pageCount = (doc as any).internal.getNumberOfPages()
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i)
-
-      // Adicionar linha de rodapé
-      doc.setDrawColor(200, 200, 200)
-      doc.line(
-        14,
-        doc.internal.pageSize.getHeight() - 20,
-        doc.internal.pageSize.getWidth() - 14,
-        doc.internal.pageSize.getHeight() - 20,
-      )
-
-      // Adicionar texto de rodapé
-      doc.setFontSize(8)
-      doc.setTextColor(100, 100, 100)
-      doc.text(
-        `BetTrack - Relatório de Apostas - Página ${i} de ${pageCount}`,
-        doc.internal.pageSize.getWidth() / 2,
-        doc.internal.pageSize.getHeight() - 10,
-        { align: "center" },
-      )
+    try {
+      const pageCount = (doc as any).internal.getNumberOfPages()
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i)
+        doc.setFontSize(8)
+        doc.setTextColor(100, 100, 100)
+        doc.text(
+          `BetTrack - Relatório de Apostas - Página ${i} de ${pageCount}`,
+          doc.internal.pageSize.getWidth() / 2,
+          doc.internal.pageSize.getHeight() - 10,
+          { align: "center" },
+        )
+      }
+      console.log("Rodapé adicionado com sucesso")
+    } catch (error) {
+      console.error("Erro ao adicionar rodapé:", error)
+      // Continuar mesmo se o rodapé falhar
     }
 
     // Salvar o PDF
-    doc.save(`bettrack_relatorio_${new Date().toISOString().split("T")[0]}.pdf`)
-
-    return true
+    try {
+      doc.save(`bettrack_relatorio_${new Date().toISOString().split("T")[0]}.pdf`)
+      console.log("PDF salvo com sucesso")
+      return true
+    } catch (error) {
+      console.error("Erro ao salvar o PDF:", error)
+      throw new Error("Falha ao salvar o PDF")
+    }
   } catch (error) {
     console.error("Erro ao exportar para PDF:", error)
     return false

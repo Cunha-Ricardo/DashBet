@@ -44,10 +44,19 @@ export function SettingsForm() {
     })
   }
 
-  // Modificar a função handleExportData para lidar melhor com erros
+  // Função melhorada para exportação de dados
   const handleExportData = async (format: "csv" | "pdf") => {
     try {
       setIsExporting(true)
+
+      // Mostrar toast de início da exportação
+      toast({
+        title: `Iniciando exportação como ${format.toUpperCase()}`,
+        description: "Por favor, aguarde enquanto processamos seus dados...",
+      })
+
+      // Pequeno delay para garantir que a UI seja atualizada
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
       // Export data
       if (format === "csv") {
@@ -57,26 +66,23 @@ export function SettingsForm() {
           description: `Seus dados foram exportados com sucesso no formato CSV.`,
         })
       } else {
-        try {
-          exportToPDF()
+        console.log("Iniciando exportação para PDF...")
+        const result = exportToPDF()
+
+        if (result) {
           toast({
             title: `Dados exportados como PDF`,
             description: `Seus dados foram exportados com sucesso no formato PDF.`,
           })
-        } catch (error) {
-          console.error("Erro ao exportar PDF:", error)
-          toast({
-            title: "Erro ao exportar PDF",
-            description: "Ocorreu um erro ao gerar o PDF. Verifique o console para mais detalhes.",
-            variant: "destructive",
-          })
+        } else {
+          throw new Error("Falha na exportação do PDF")
         }
       }
     } catch (error) {
-      console.error("Erro ao exportar dados:", error)
+      console.error(`Erro ao exportar dados como ${format}:`, error)
       toast({
-        title: "Erro ao exportar dados",
-        description: "Ocorreu um erro ao exportar seus dados. Tente novamente.",
+        title: `Erro ao exportar como ${format.toUpperCase()}`,
+        description: "Ocorreu um erro ao exportar seus dados. Verifique o console para mais detalhes.",
         variant: "destructive",
       })
     } finally {
